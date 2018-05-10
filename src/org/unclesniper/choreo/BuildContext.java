@@ -9,23 +9,36 @@ import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.io.IOException;
+import org.xml.sax.Locator;
 import java.util.LinkedList;
 import org.xml.sax.XMLReader;
 import org.xml.sax.Attributes;
 import org.xml.sax.InputSource;
 import java.net.URLClassLoader;
+import java.util.logging.Level;
 import org.xml.sax.SAXException;
 import org.xml.sax.SAXParseException;
 import java.net.MalformedURLException;
 import org.xml.sax.helpers.DefaultHandler;
 import javax.xml.parsers.SAXParserFactory;
+import java.lang.reflect.InvocationTargetException;
 import javax.xml.parsers.ParserConfigurationException;
 
 public final class BuildContext {
 
 	private final class BuildHandler extends DefaultHandler {
 
+		private Locator documentLocator;
+
 		public BuildHandler() {}
+
+		public Locator getDocumentLocator() {
+			return documentLocator;
+		}
+
+		public void setDocumentLocator(Locator documentLocator) {
+			this.documentLocator = documentLocator;
+		}
 
 		public void fatalError(SAXParseException spe) throws SAXParseException {
 			if(currentError == null)
@@ -36,13 +49,93 @@ public final class BuildContext {
 		public void startElement(String ns, String name, String qname, Attributes attributes) {
 			if(currentError != null)
 				return;
+			if(ns == null || ns.length() == 0 || ns.equals(BuildContext.LANG_XML_NS)) {
+				ChoreoElementNestingException.Outer outer;
+				PendingObject object;
+				if(levelStack.isEmpty()) {
+					outer = ChoreoElementNestingException.Outer.DOCUMENT;
+					object = null;
+				}
+				else {
+					object = levelStack.getLast().asObject();
+					if(object == null)
+						outer = ChoreoElementNestingException.Outer.PROPERTY;
+					else
+						outer = null;
+				}
+				if(outer != null) {
+					currentError = new ChoreoElementNestingException(documentLocator, ns, name, outer);
+					return;
+				}
+				beginProperty(name, attributes, object);
+			}
+			else
+				beginObject(ns, name, attributes);
+		}
+
+		private void beginObject(String ns, String name, Attributes attributes) {
+			Module module;
+			try {
+				module = getModule(new URL(ns));
+			}
+			catch(ChoreoException ce) {
+				currentError = ce;
+				return;
+			}
+			catch(MalformedURLException mue) {
+				currentError = new ChoreoMalformedModuleURLException(documentLocator, ns, mue);
+				return;
+			}
+			ClassInfo classInfo = module.getClassByElementName(name);
+			if(classInfo == null) {
+				currentError = new UndefinedElementTypeException(documentLocator, ns, name);
+				return;
+			}
+			Object object;
+			try {
+				object = classInfo.getLeafConstructor().newInstance();
+			}
+			catch(InstantiationException ie) {
+				currentError = new ElementClassInstantiationException(documentLocator,
+						classInfo.getSubject().getName(), ie);
+				return;
+			}
+			catch(IllegalAccessException iae) {
+				currentError = new ElementClassInstantiationException(documentLocator,
+						classInfo.getSubject().getName(), iae);
+				return;
+			}
+			catch(InvocationTargetException ite) {
+				currentError = new ElementClassInstantiationException(documentLocator,
+						classInfo.getSubject().getName(), ite);
+				return;
+			}
+			levelStack.addLast(new PendingObject(object, classInfo));
+		}
+
+		private void beginProperty(String name, Attributes attributes, PendingObject pendingObject) {
 			//TODO
 		}
 
 		public void endElement(String ns, String name, String qname) {
 			if(currentError != null)
 				return;
-			//TODO
+			Level oldTop = levelStack.removeLast();
+			if(levelStack.isEmpty())
+				rootObject = oldTop.asObject().object;
+			else {
+				PendingObject object = oldTop.asObject();
+				if(object != null) {
+					Level newTop = levelStack.getLast();
+					PendingProperty outerProperty = newTop.asProperty();
+					if(outerProperty != null) {
+						//TODO
+					}
+					else {
+						//TODO
+					}
+				}
+			}
 		}
 
 		public void characters(char[] chars, int offset, int length) {
@@ -53,8 +146,60 @@ public final class BuildContext {
 
 	}
 
+	private interface Level {
+
+		PendingObject asObject();
+
+		PendingProperty asProperty();
+
+	}
+
+	private static final class PendingObject implements Level {
+
+		public final Object object;
+
+		public final ClassInfo classInfo;
+
+		public PendingObject(Object object, ClassInfo classInfo) {
+			this.object = object;
+			this.classInfo = classInfo;
+		}
+
+		public PendingObject asObject() {
+			return this;
+		}
+
+		public PendingProperty asProperty() {
+			return null;
+		}
+
+	}
+
+	private static final class PendingProperty implements Level {
+
+		public final Object object;
+
+		public final PropertyInfo propertyInfo;
+
+		public PendingProperty(Object object, PropertyInfo propertyInfo) {
+			this.object = object;
+			this.propertyInfo = propertyInfo;
+		}
+
+		public PendingObject asObject() {
+			return null;
+		}
+
+		public PendingProperty asProperty() {
+			return this;
+		}
+
+	}
+
 	public static final File DEFAULT_MODULE_DIRECTORY
 			= new File(new File(System.getProperty("user.home"), ".choreo"), "modules");
+
+	public static final String LANG_XML_NS = "http://xml.unclesniper.org/choreo/lang/";
 
 	private static final ThreadLocal<BuildContext> THREAD_LOCAL_CONTEXT = new ThreadLocal<BuildContext>();
 
@@ -76,6 +221,10 @@ public final class BuildContext {
 
 	private File moduleDirectory;
 
+	private final Deque<Level> levelStack = new LinkedList<Level>();
+
+	private Object rootObject;
+
 	public BuildContext() {}
 
 	public BuildContext(ClassLoader currentClassLoader) {
@@ -94,6 +243,15 @@ public final class BuildContext {
 		return currentError != null;
 	}
 
+	public ChoreoException getCurrentError() {
+		return currentError;
+	}
+
+	public void propagateError() throws ChoreoException {
+		if(currentError != null)
+			throw currentError;
+	}
+
 	public File getModuleDirectory() {
 		return moduleDirectory;
 	}
@@ -106,6 +264,8 @@ public final class BuildContext {
 		SAXParserFactory spf = SAXParserFactory.newInstance();
 		spf.setNamespaceAware(true);
 		XMLReader xmlReader;
+		Locator oldLocator = saxHandler.getDocumentLocator();
+		saxHandler.setDocumentLocator(null);
 		try {
 			xmlReader = spf.newSAXParser().getXMLReader();
 			xmlReader.setContentHandler(saxHandler);
@@ -122,6 +282,9 @@ public final class BuildContext {
 		}
 		catch(SAXException se) {
 			throw new ChoreoSAXException(null, se);
+		}
+		finally {
+			saxHandler.setDocumentLocator(oldLocator);
 		}
 	}
 
@@ -201,6 +364,10 @@ public final class BuildContext {
 				throw new IOException("Failed to create directory: " + cache.getAbsolutePath());
 		}
 		return cache;
+	}
+
+	public Object getRootObject() {
+		return rootObject;
 	}
 
 	public static BuildContext getCurrentContext() {

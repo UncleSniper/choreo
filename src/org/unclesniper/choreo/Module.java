@@ -174,4 +174,8 @@ public final class Module {
 		}
 	}
 
+	public ClassInfo getClassByElementName(String name) {
+		return classes.get(name);
+	}
+
 }
