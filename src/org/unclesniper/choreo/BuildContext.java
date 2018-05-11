@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.io.IOException;
 import org.xml.sax.Locator;
 import java.util.LinkedList;
@@ -17,6 +18,7 @@ import org.xml.sax.InputSource;
 import java.net.URLClassLoader;
 import java.util.logging.Level;
 import org.xml.sax.SAXException;
+import java.lang.reflect.Method;
 import org.xml.sax.SAXParseException;
 import java.net.MalformedURLException;
 import org.xml.sax.helpers.DefaultHandler;
@@ -49,6 +51,8 @@ public final class BuildContext {
 		public void startElement(String ns, String name, String qname, Attributes attributes) {
 			if(currentError != null)
 				return;
+			if(charBuffer != null)
+				processText();
 			if(ns == null || ns.length() == 0 || ns.equals(BuildContext.LANG_XML_NS)) {
 				ChoreoElementNestingException.Outer outer;
 				PendingObject object;
@@ -73,19 +77,24 @@ public final class BuildContext {
 				beginObject(ns, name, attributes);
 		}
 
-		private void beginObject(String ns, String name, Attributes attributes) {
-			Module module;
+		private Module getModuleFromXML(String ns) {
 			try {
-				module = getModule(new URL(ns));
+				return getModule(new URL(ns));
 			}
 			catch(ChoreoException ce) {
 				currentError = ce;
-				return;
+				return null;
 			}
 			catch(MalformedURLException mue) {
 				currentError = new ChoreoMalformedModuleURLException(documentLocator, ns, mue);
-				return;
+				return null;
 			}
+		}
+
+		private void beginObject(String ns, String name, Attributes attributes) {
+			Module module = getModuleFromXML(ns);
+			if(module == null)
+				return;
 			ClassInfo classInfo = module.getClassByElementName(name);
 			if(classInfo == null) {
 				currentError = new UndefinedElementTypeException(documentLocator, ns, name);
@@ -110,38 +119,227 @@ public final class BuildContext {
 						classInfo.getSubject().getName(), ite);
 				return;
 			}
-			levelStack.addLast(new PendingObject(object, classInfo));
+			for(Method injector : classInfo.getContextInjectors()) {
+				try {
+					injector.invoke(object, BuildContext.this);
+				}
+				catch(IllegalAccessException iae) {
+					currentError = new PropertyAccessException(documentLocator,
+							classInfo.getSubject().getName(), null, injector.toString(), iae);
+					return;
+				}
+				catch(IllegalArgumentException iae) {
+					currentError = new PropertyAccessException(documentLocator,
+							classInfo.getSubject().getName(), null, injector.toString(), iae);
+					return;
+				}
+				catch(InvocationTargetException ite) {
+					currentError = new PropertyAccessException(documentLocator,
+							classInfo.getSubject().getName(), null, injector.toString(), ite);
+					return;
+				}
+			}
+			boolean skip = processObjectAttributes(object, classInfo, attributes);
+			levelStack.addLast(new PendingObject(object, classInfo, skip));
+		}
+
+		private boolean processObjectAttributes(Object object, ClassInfo classInfo, Attributes attributes) {
+			boolean skip = false;
+			final int count = attributes.getLength();
+			for(int i = 0; i < count; ++i) {
+				String name = attributes.getLocalName(i);
+				if(name.length() == 0)
+					attributes.getQName(i);
+				String ns = attributes.getURI(i);
+				if(ns.length() == 0)
+					ns = null;
+				String value = attributes.getValue(i);
+				if(ns == null)
+					processPropertyAttribute(object, classInfo, name, value);
+				else if(ns.equals(BuildContext.LANG_XML_NS))
+					skip = processLangAttribute(object, name, value) || skip;
+				else
+					skip = processCustomAttribute(object, classInfo, ns, name, value) || skip;
+			}
+			return skip;
+		}
+
+		private void processPropertyAttribute(Object object, ClassInfo classInfo, String name, String value) {
+			setObjectProperty(object, classInfo,
+					classInfo.getSetter(name), ClassInfo.AccessorType.SETTER, name, value, false);
+		}
+
+		private boolean processLangAttribute(Object object, String name, String value) {
+			if(name.equals(BuildContext.LANG_SERVICE_ATTR)) {
+				putServiceObject(value, object);
+				return false;
+			}
+			if(name.equals(BuildContext.LANG_GLOBAL_SERVICE_ATTR)) {
+				putServiceObject(value, object);
+				return true;
+			}
+			currentError = new UnknownChoreoAttributeException(documentLocator, BuildContext.LANG_XML_NS, name);
+			return false;
+		}
+
+		private boolean processCustomAttribute(Object object, ClassInfo classInfo,
+				String ns, String name, String value) {
+			Module module = getModuleFromXML(ns);
+			if(module == null)
+				return false;
+			CustomAttributeHandler handler = module.getCustomAttributeHandler(name);
+			if(handler == null) {
+				currentError = new UnhandledCustomAttributeException(documentLocator, ns, name);
+				return false;
+			}
+			try {
+				return handler.handleAttribute(BuildContext.this, object, classInfo, name, value);
+			}
+			catch(ChoreoException ce) {
+				currentError = ce;
+				return false;
+			}
 		}
 
 		private void beginProperty(String name, Attributes attributes, PendingObject pendingObject) {
-			//TODO
+			PropertyInfo propertyInfo = pendingObject.classInfo.getAdder(name);
+			if(propertyInfo == null) {
+				currentError = new NoSuchPropertyException(documentLocator,
+						pendingObject.classInfo.getSubject().getName(), name, ClassInfo.AccessorType.ADDER);
+				return;
+			}
+			if(attributes.getLength() > 0) {
+				currentError = new PropertyWithAttributesException(documentLocator, name);
+				return;
+			}
+			levelStack.addLast(new PendingProperty(pendingObject.object, pendingObject.classInfo, propertyInfo));
 		}
 
 		public void endElement(String ns, String name, String qname) {
 			if(currentError != null)
 				return;
+			if(charBuffer != null)
+				processText();
 			Level oldTop = levelStack.removeLast();
 			if(levelStack.isEmpty())
 				rootObject = oldTop.asObject().object;
 			else {
 				PendingObject object = oldTop.asObject();
 				if(object != null) {
+					// popping an object
 					Level newTop = levelStack.getLast();
 					PendingProperty outerProperty = newTop.asProperty();
 					if(outerProperty != null) {
-						//TODO
+						PendingObject outerObject = newTop.asObject();
+						PropertyInfo propertyInfo = outerObject.classInfo.getDefaultAdder();
+						if(propertyInfo == null)
+							propertyInfo = BuildContext.EMPTY_DEFAULT_ADDER_PROPERTY_INFO;
+						setObjectProperty(outerObject.object, outerObject.classInfo, propertyInfo,
+								ClassInfo.AccessorType.ADDER, null, object.object, false);
 					}
-					else {
-						//TODO
-					}
+					else
+						setObjectProperty(outerProperty.object, outerProperty.classInfo,
+								outerProperty.propertyInfo, ClassInfo.AccessorType.ADDER,
+								outerProperty.propertyInfo.getName(), object.object, false);
+				}
+				else {
+					// popping a property
 				}
 			}
+		}
+
+		private void setObjectProperty(Object object, ClassInfo classInfo, PropertyInfo propertyInfo,
+				ClassInfo.AccessorType accessorType, String name, Object value, boolean isIgnorableWhitespace) {
+			if(propertyInfo == null) {
+				currentError = new NoSuchPropertyException(documentLocator,
+						classInfo.getSubject().getName(), name, accessorType);
+				return;
+			}
+			List<AccessorInfo> candidates = new LinkedList<AccessorInfo>();
+			for(Class<?> propertyType : propertyInfo.getAccessorTypes()) {
+				AccessorInfo propertyAccessor = propertyInfo.getAccessor(propertyType);
+				if(propertyType.isPrimitive()) {
+					if(value == null)
+						continue;
+					propertyType = BuildContext.VALUE_TYPE_TO_REFERENCE_TYPE.get(propertyType);
+				}
+				if(value != null && !propertyType.isAssignableFrom(value.getClass()))
+					continue;
+				Iterator<AccessorInfo> cid = candidates.iterator();
+				boolean add = true;
+				while(cid.hasNext()) {
+					AccessorInfo candidate = cid.next();
+					if(candidate.getType().isAssignableFrom(propertyType))
+						cid.remove();
+					else if(propertyType.isAssignableFrom(candidate.getType()))
+						add = false;
+				}
+				if(add)
+					candidates.add(propertyAccessor);
+			}
+			String fauxName;
+			if(name != null)
+				fauxName = name;
+			else if(accessorType == ClassInfo.AccessorType.ADDER)
+				fauxName = "<default adder>";
+			else
+				fauxName = "???";
+			switch(candidates.size()) {
+				case 0:
+					break;
+				case 1:
+					{
+						AccessorInfo accessor = candidates.get(0);
+						try {
+							accessor.getMethod().invoke(object, value);
+						}
+						catch(IllegalAccessException iae) {
+							currentError = new PropertyAccessException(documentLocator,
+									classInfo.getSubject().getName(), fauxName,
+									accessor.getMethod().toString(), iae);
+						}
+						catch(IllegalArgumentException iae) {
+							currentError = new PropertyAccessException(documentLocator,
+									classInfo.getSubject().getName(), fauxName,
+									accessor.getMethod().toString(), iae);
+						}
+						catch(InvocationTargetException ite) {
+							currentError = new PropertyAccessException(documentLocator,
+									classInfo.getSubject().getName(), fauxName,
+									accessor.getMethod().toString(), ite);
+						}
+						return;
+					}
+				default:
+					//TODO: exception: ambiguous
+					return;
+			}
+			//TODO: check mappers
 		}
 
 		public void characters(char[] chars, int offset, int length) {
 			if(currentError != null)
 				return;
-			//TODO
+			if(charBuffer == null)
+				charBuffer = new StringBuilder();
+			charBuffer.append(chars, offset, length);
+		}
+
+		private void processText() {
+			String text = charBuffer.toString();
+			charBuffer = null;
+			if(levelStack.isEmpty())
+				return;
+			Level top = levelStack.getLast();
+			PendingObject object = top.asObject();
+			if(object != null)
+				setObjectProperty(object.object, object.classInfo, BuildContext.EMPTY_DEFAULT_ADDER_PROPERTY_INFO,
+						ClassInfo.AccessorType.ADDER, null, text, text.trim().isEmpty());
+			else {
+				PendingProperty property = top.asProperty();
+				setObjectProperty(property.object, property.classInfo, property.propertyInfo,
+						ClassInfo.AccessorType.ADDER, property.propertyInfo.getName(), text, text.trim().isEmpty());
+			}
 		}
 
 	}
@@ -160,9 +358,12 @@ public final class BuildContext {
 
 		public final ClassInfo classInfo;
 
-		public PendingObject(Object object, ClassInfo classInfo) {
+		public final boolean skip;
+
+		public PendingObject(Object object, ClassInfo classInfo, boolean skip) {
 			this.object = object;
 			this.classInfo = classInfo;
+			this.skip = skip;
 		}
 
 		public PendingObject asObject() {
@@ -179,10 +380,13 @@ public final class BuildContext {
 
 		public final Object object;
 
+		private final ClassInfo classInfo;
+
 		public final PropertyInfo propertyInfo;
 
-		public PendingProperty(Object object, PropertyInfo propertyInfo) {
+		public PendingProperty(Object object, ClassInfo classInfo, PropertyInfo propertyInfo) {
 			this.object = object;
+			this.classInfo = classInfo;
 			this.propertyInfo = propertyInfo;
 		}
 
@@ -201,9 +405,29 @@ public final class BuildContext {
 
 	public static final String LANG_XML_NS = "http://xml.unclesniper.org/choreo/lang/";
 
+	private static final String LANG_SERVICE_ATTR = "service";
+
+	private static final String LANG_GLOBAL_SERVICE_ATTR = "globalService";
+
 	private static final ThreadLocal<BuildContext> THREAD_LOCAL_CONTEXT = new ThreadLocal<BuildContext>();
 
 	private static final URL[] URL_ARRAY_TEMPLATE = new URL[0];
+
+	private static final PropertyInfo EMPTY_DEFAULT_ADDER_PROPERTY_INFO = new PropertyInfo(null);
+
+	private static final Map<Class<?>, Class<?>> VALUE_TYPE_TO_REFERENCE_TYPE;
+
+	static {
+		VALUE_TYPE_TO_REFERENCE_TYPE = new HashMap<Class<?>, Class<?>>();
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Byte.TYPE, Byte.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Short.TYPE, Short.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Integer.TYPE, Integer.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Long.TYPE, Long.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Character.TYPE, Character.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Float.TYPE, Float.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Double.TYPE, Double.class);
+		VALUE_TYPE_TO_REFERENCE_TYPE.put(Boolean.TYPE, Boolean.class);
+	}
 
 	private final BuildHandler saxHandler = new BuildHandler();
 
@@ -224,6 +448,10 @@ public final class BuildContext {
 	private final Deque<Level> levelStack = new LinkedList<Level>();
 
 	private Object rootObject;
+
+	private final Map<String, Object> serviceObjects = new HashMap<String, Object>();
+
+	private StringBuilder charBuffer;
 
 	public BuildContext() {}
 
@@ -258,6 +486,23 @@ public final class BuildContext {
 
 	public void setModuleDirectory(File moduleDirectory) {
 		this.moduleDirectory = moduleDirectory;
+	}
+
+	public Iterable<String> getServiceObjectKeys() {
+		return serviceObjects.keySet();
+	}
+
+	public Object getServiceObject(String key) {
+		return serviceObjects.get(key);
+	}
+
+	public void putServiceObject(String key, Object value) {
+		if(key == null)
+			throw new IllegalArgumentException("Service object key cannot be null");
+		if(value == null)
+			serviceObjects.remove(key);
+		else
+			serviceObjects.put(key, value);
 	}
 
 	public void parseDocument(InputSource source) throws ChoreoException, IOException {

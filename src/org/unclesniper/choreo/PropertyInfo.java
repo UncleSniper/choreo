@@ -25,4 +25,16 @@ public final class PropertyInfo {
 			accessors.put(newType, info);
 	}
 
+	public Iterable<Class<?>> getAccessorTypes() {
+		return accessors.keySet();
+	}
+
+	public Iterable<AccessorInfo> getAccessors() {
+		return accessors.values();
+	}
+
+	public AccessorInfo getAccessor(Class<?> type) {
+		return accessors.get(type);
+	}
+
 }

@@ -1,7 +1,9 @@
 package org.unclesniper.choreo;
 
 import java.util.Map;
+import java.util.List;
 import java.util.HashMap;
+import java.util.LinkedList;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Constructor;
@@ -9,10 +11,11 @@ import org.unclesniper.choreo.annotation.Adder;
 import org.unclesniper.choreo.annotation.Setter;
 import org.unclesniper.choreo.annotation.PropertyName;
 import org.unclesniper.choreo.annotation.DefaultAdder;
+import org.unclesniper.choreo.annotation.InjectContext;
 
 public final class ClassInfo {
 
-	private enum AccessorType {
+	public enum AccessorType {
 		SETTER,
 		ADDER
 	}
@@ -26,6 +29,8 @@ public final class ClassInfo {
 	private final Map<String, PropertyInfo> adders = new HashMap<String, PropertyInfo>();
 
 	private PropertyInfo defaultAdder;
+
+	private final List<Method> contextInjectors = new LinkedList<Method>();
 
 	public ClassInfo(Class<?> subject, String module) throws InvalidElementClassException {
 		this.subject = subject;
@@ -42,6 +47,26 @@ public final class ClassInfo {
 
 	public PropertyInfo getDefaultAdder() {
 		return defaultAdder;
+	}
+
+	public Iterable<Method> getContextInjectors() {
+		return contextInjectors;
+	}
+
+	public Iterable<String> getSetterNames() {
+		return setters.keySet();
+	}
+
+	public PropertyInfo getSetter(String name) {
+		return setters.get(name);
+	}
+
+	public Iterable<String> getAdderNames() {
+		return adders.keySet();
+	}
+
+	public PropertyInfo getAdder(String name) {
+		return adders.get(name);
 	}
 
 	private void scanClass(String module) throws InvalidElementClassException {
@@ -80,7 +105,10 @@ public final class ClassInfo {
 		DefaultAdder defAdderAnn = method.getAnnotation(DefaultAdder.class);
 		if(defAdderAnn != null)
 			sinkDefaultAdder(module, method);
-		if(setterAnn == null && adderAnn == null && defAdderAnn == null)
+		InjectContext injCtxAnn = method.getAnnotation(InjectContext.class);
+		if(injCtxAnn != null)
+			sinkContextInjector(module, method);
+		if(setterAnn == null && adderAnn == null && defAdderAnn == null && injCtxAnn == null)
 			sinkMethod(module, method, propname, nameAnn != null);
 	}
 
@@ -137,6 +165,17 @@ public final class ClassInfo {
 		if(defaultAdder == null)
 			defaultAdder = new PropertyInfo(null);
 		defaultAdder.addAccessor(accessor);
+	}
+
+	private void sinkContextInjector(String module, Method method) throws InvalidElementClassMethodException {
+		Class<?>[] parameters = method.getParameterTypes();
+		if(parameters.length != 1)
+			throw new InvalidElementClassMethodException(module, subject.getName(), method.toString(),
+					"Method cannot be @InjectContext, as it has " + parameters.length + " parameters");
+		if(!parameters[0].isAssignableFrom(BuildContext.class))
+			throw new InvalidElementClassMethodException(module, subject.getName(), method.toString(),
+					"Method cannot be @InjectContext, as it cannot take a BuildContext as its parameter");
+		contextInjectors.add(method);
 	}
 
 	private void sinkAccessor(AccessorInfo accessor, String propname, Map<String, PropertyInfo> map) {

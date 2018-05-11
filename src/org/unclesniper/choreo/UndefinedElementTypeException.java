@@ -19,4 +19,12 @@ public class UndefinedElementTypeException extends ChoreoGraphException {
 		this(location == null ? null : new XMLLocation(location), moduleURL, elementName);
 	}
 
+	public String getModuleURL() {
+		return moduleURL;
+	}
+
+	public String getElementName() {
+		return elementName;
+	}
+
 }

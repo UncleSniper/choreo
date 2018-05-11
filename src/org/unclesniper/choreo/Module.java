@@ -27,6 +27,8 @@ public final class Module {
 
 	public static final String MANIFEST_DEPENDENCIES_KEY = "Requires";
 
+	public static final String MANIFEST_INITIALIZER_KEY = "Initializer";
+
 	private static final char[] HEX_DIGITS = "0123456789ABCDEF".toCharArray();
 
 	private static final Pattern WHITESPACE_SPLIT_PATTERN = Pattern.compile("\\s+");
@@ -42,6 +44,13 @@ public final class Module {
 	private String elementMapEntry;
 
 	private final List<String> dependencies = new LinkedList<String>();
+
+	private String initializerName;
+
+	private ModuleInitializer initializer;
+
+	private final Map<String, CustomAttributeHandler> customAttributeHandlers
+			= new HashMap<String, CustomAttributeHandler>();
 
 	public Module(URL url) {
 		this.url = url;
@@ -65,6 +74,31 @@ public final class Module {
 
 	public Iterable<String> getDependencies() {
 		return dependencies;
+	}
+
+	public String getInitializerName() {
+		return initializerName;
+	}
+
+	public ModuleInitializer getInitializer() {
+		return initializer;
+	}
+
+	public Iterable<String> getCustomAttributeHandlerNames() {
+		return customAttributeHandlers.keySet();
+	}
+
+	public CustomAttributeHandler getCustomAttributeHandler(String name) {
+		return customAttributeHandlers.get(name);
+	}
+
+	public void putCustomAttributeHandler(String name, CustomAttributeHandler handler) {
+		if(name == null)
+			throw new IllegalArgumentException("Custom attribute handler name cannot be null");
+		if(handler == null)
+			customAttributeHandlers.remove(name);
+		else
+			customAttributeHandlers.put(name, handler);
 	}
 
 	public URL getClassPathURL() throws ChoreoIOException {
@@ -134,6 +168,7 @@ public final class Module {
 					dependencies.add(dep);
 			}
 		}
+		initializerName = attrs.getValue(Module.MANIFEST_INITIALIZER_KEY);
 	}
 
 	private void readElementMap(JarFile jar) throws IllegalModuleException, IOException {
@@ -152,6 +187,9 @@ public final class Module {
 		ClassLoader loader = context.getCurrentClassLoader();
 		if(loader == null)
 			loader = BuildContext.class.getClassLoader();
+		createInitializer(loader);
+		if(initializer != null)
+			initializer.initializeModuleBeforeBind(context, this);
 		String modname = url.toString();
 		for(String key : elementMap.stringPropertyNames()) {
 			String value = elementMap.getProperty(key);
@@ -171,6 +209,44 @@ public final class Module {
 						+ value + "' in module " + url);
 			}
 			classes.put(key, new ClassInfo(clazz, modname));
+		}
+		if(initializer != null)
+			initializer.initializeModuleAfterBind(context, this);
+	}
+
+	private void createInitializer(ClassLoader loader) throws IllegalModuleException {
+		if(initializerName == null)
+			return;
+		Class<?> clazz;
+		try {
+			clazz = loader.loadClass(initializerName);
+		}
+		catch(ClassNotFoundException cnfe) {
+			throw new IllegalModuleException(url.toString(), "Undefined initializer class '"
+					+ initializerName + "' in module " + url);
+		}
+		Class<? extends ModuleInitializer> miClass;
+		try {
+			miClass = clazz.asSubclass(ModuleInitializer.class);
+		}
+		catch(ClassCastException cce) {
+			throw new IllegalModuleException(url.toString(), "Initializer class '" + initializerName
+					+ "' does not implement ModuleInitializer in module " + url);
+		}
+		try {
+			initializer = miClass.newInstance();
+		}
+		catch(InstantiationException ie) {
+			String msg = ie.getMessage();
+			throw new IllegalModuleException(url.toString(), "Failed to instantiate initializer class '"
+					+ initializerName + "' for module '" + url + '\'' + (msg == null || msg.length() == 0
+							? "" : ": " + msg), ie);
+		}
+		catch(IllegalAccessException iae) {
+			String msg = iae.getMessage();
+			throw new IllegalModuleException(url.toString(), "Constructor of initializer class '"
+					+ initializerName + "' for module '" + url + "' is not accessible"
+					+ (msg == null || msg.length() == 0 ? "" : ": " + msg), iae);
 		}
 	}
 
