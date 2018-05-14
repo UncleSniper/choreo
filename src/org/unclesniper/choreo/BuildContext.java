@@ -146,7 +146,7 @@ public final class BuildContext {
 		private boolean processObjectAttributes(Object object, ClassInfo classInfo, Attributes attributes) {
 			boolean skip = false;
 			final int count = attributes.getLength();
-			for(int i = 0; i < count; ++i) {
+			for(int i = 0; i < count && currentError == null; ++i) {
 				String name = attributes.getLocalName(i);
 				if(name.length() == 0)
 					attributes.getQName(i);
@@ -311,7 +311,8 @@ public final class BuildContext {
 						return;
 					}
 				default:
-					//TODO: exception: ambiguous
+					currentError = new AmbiguousAccessorException(documentLocator,
+							accessorType, fauxName, classInfo, value == null ? null : value.getClass());
 					return;
 			}
 			//TODO: check mappers
