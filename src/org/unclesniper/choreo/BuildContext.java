@@ -315,7 +315,51 @@ public final class BuildContext {
 							accessorType, fauxName, classInfo, value == null ? null : value.getClass());
 					return;
 			}
-			//TODO: check mappers
+			Object singleMappedValue = null;
+			AccessorInfo singleAccessor = null;
+			int mapCount = 0;
+			Class<?> fromType = value == null ? null : value.getClass();
+			for(Class<?> propertyType : propertyInfo.getAccessorTypes()) {
+				AccessorInfo propertyAccessor = propertyInfo.getAccessor(propertyType);
+				for(PropertyTypeMapper mapper : typeMappers) {
+					if(!mapper.canMapPropertyType(fromType, propertyType))
+						continue;
+					try {
+						singleMappedValue = mapper.mapPropertyValue(value, propertyType);
+						singleAccessor = propertyAccessor;
+						++mapCount;
+					}
+					catch(IllegalArgumentException iae) {}
+				}
+			}
+			switch(mapCount) {
+				case 0:
+					//TODO:
+				case 1:
+					try {
+						singleAccessor.getMethod().invoke(object, singleMappedValue);
+					}
+					catch(IllegalAccessException iae) {
+						currentError = new PropertyAccessException(documentLocator,
+								classInfo.getSubject().getName(), fauxName,
+								singleAccessor.getMethod().toString(), iae);
+					}
+					catch(IllegalArgumentException iae) {
+						currentError = new PropertyAccessException(documentLocator,
+								classInfo.getSubject().getName(), fauxName,
+								singleAccessor.getMethod().toString(), iae);
+					}
+					catch(InvocationTargetException ite) {
+						currentError = new PropertyAccessException(documentLocator,
+								classInfo.getSubject().getName(), fauxName,
+								singleAccessor.getMethod().toString(), ite);
+					}
+					break;
+				default:
+					currentError = new AmbiguousAccessorException(documentLocator,
+							accessorType, fauxName, classInfo, fromType);
+					break;
+			}
 		}
 
 		public void characters(char[] chars, int offset, int length) {
@@ -454,6 +498,8 @@ public final class BuildContext {
 
 	private StringBuilder charBuffer;
 
+	private final Set<PropertyTypeMapper> typeMappers = new HashSet<PropertyTypeMapper>();
+
 	public BuildContext() {}
 
 	public BuildContext(ClassLoader currentClassLoader) {
@@ -504,6 +550,19 @@ public final class BuildContext {
 			serviceObjects.remove(key);
 		else
 			serviceObjects.put(key, value);
+	}
+
+	public Iterable<PropertyTypeMapper> getTypeMappers() {
+		return typeMappers;
+	}
+
+	public void addTypeMapper(PropertyTypeMapper mapper) {
+		if(mapper != null)
+			typeMappers.add(mapper);
+	}
+
+	public boolean removeTypeMapper(PropertyTypeMapper mapper) {
+		return typeMappers.remove(mapper);
 	}
 
 	public void parseDocument(InputSource source) throws ChoreoException, IOException {
