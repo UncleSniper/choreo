@@ -9,6 +9,7 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Constructor;
 import org.unclesniper.choreo.annotation.Adder;
 import org.unclesniper.choreo.annotation.Setter;
+import org.unclesniper.choreo.annotation.Whitespace;
 import org.unclesniper.choreo.annotation.PropertyName;
 import org.unclesniper.choreo.annotation.DefaultAdder;
 import org.unclesniper.choreo.annotation.InjectContext;
@@ -96,23 +97,24 @@ public final class ClassInfo {
 		}
 		if(propname == null)
 			propname = ClassInfo.guessPropertyName(method.getName());
+		Whitespace whitespaceAnn = method.getAnnotation(Whitespace.class);
 		Setter setterAnn = method.getAnnotation(Setter.class);
 		if(setterAnn != null)
-			sinkSetter(module, method, propname, setterAnn);
+			sinkSetter(module, method, propname, setterAnn, whitespaceAnn);
 		Adder adderAnn = method.getAnnotation(Adder.class);
 		if(adderAnn != null)
-			sinkAdder(module, method, propname, adderAnn);
+			sinkAdder(module, method, propname, adderAnn, whitespaceAnn);
 		DefaultAdder defAdderAnn = method.getAnnotation(DefaultAdder.class);
 		if(defAdderAnn != null)
-			sinkDefaultAdder(module, method);
+			sinkDefaultAdder(module, method, whitespaceAnn);
 		InjectContext injCtxAnn = method.getAnnotation(InjectContext.class);
 		if(injCtxAnn != null)
 			sinkContextInjector(module, method);
 		if(setterAnn == null && adderAnn == null && defAdderAnn == null && injCtxAnn == null)
-			sinkMethod(module, method, propname, nameAnn != null);
+			sinkMethod(module, method, propname, nameAnn != null, whitespaceAnn);
 	}
 
-	private void sinkSetter(String module, Method method, String propname, Setter annotation)
+	private void sinkSetter(String module, Method method, String propname, Setter annotation, Whitespace whitespace)
 			throws InvalidElementClassMethodException {
 		Class<?>[] parameters = method.getParameterTypes();
 		if(parameters.length != 1)
@@ -122,12 +124,13 @@ public final class ClassInfo {
 		if(altname != null && (altname.length() == 0 || altname.equals(propname)))
 			altname = null;
 		AccessorInfo accInfo = new AccessorInfo(method);
+		accInfo.setFrom(whitespace);
 		sinkAccessor(accInfo, propname, setters);
 		if(altname != null)
 			sinkAccessor(accInfo, altname, setters);
 	}
 
-	private void sinkAdder(String module, Method method, String propname, Adder annotation)
+	private void sinkAdder(String module, Method method, String propname, Adder annotation, Whitespace whitespace)
 			throws InvalidElementClassMethodException {
 		Class<?>[] parameters = method.getParameterTypes();
 		if(parameters.length != 1)
@@ -137,12 +140,13 @@ public final class ClassInfo {
 		if(altname != null && (altname.length() == 0 || altname.equals(propname)))
 			altname = null;
 		AccessorInfo accInfo = new AccessorInfo(method);
+		accInfo.setFrom(whitespace);
 		sinkAccessor(accInfo, propname, adders);
 		if(altname != null)
 			sinkAccessor(accInfo, altname, adders);
 	}
 
-	private void sinkMethod(String module, Method method, String propname, boolean hasName)
+	private void sinkMethod(String module, Method method, String propname, boolean hasName, Whitespace whitespace)
 			throws InvalidElementClassMethodException {
 		Class<?>[] parameters = method.getParameterTypes();
 		if(parameters.length != 1) {
@@ -152,11 +156,13 @@ public final class ClassInfo {
 			return;
 		}
 		AccessorInfo accInfo = new AccessorInfo(method);
+		accInfo.setFrom(whitespace);
 		sinkAccessor(accInfo, propname, setters);
 		sinkAccessor(accInfo, propname, adders);
 	}
 
-	private void sinkDefaultAdder(String module, Method method) throws InvalidElementClassMethodException {
+	private void sinkDefaultAdder(String module, Method method, Whitespace whitespace)
+			throws InvalidElementClassMethodException {
 		Class<?>[] parameters = method.getParameterTypes();
 		if(parameters.length != 1)
 			throw new InvalidElementClassMethodException(module, subject.getName(), method.toString(),
@@ -164,6 +170,7 @@ public final class ClassInfo {
 		AccessorInfo accessor = new AccessorInfo(method);
 		if(defaultAdder == null)
 			defaultAdder = new PropertyInfo(null);
+		accessor.setFrom(whitespace);
 		defaultAdder.addAccessor(accessor);
 	}
 

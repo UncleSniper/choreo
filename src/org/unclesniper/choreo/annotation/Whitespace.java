@@ -9,8 +9,10 @@ import java.lang.annotation.RetentionPolicy;
 @Documented
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
-public @interface Setter {
+public @interface Whitespace {
 
-	String value() default "";
+	boolean trim() default false;
+
+	EmptyStringPolicy empty() default EmptyStringPolicy.KEEP;
 
 }

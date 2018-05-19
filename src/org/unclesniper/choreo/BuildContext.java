@@ -166,7 +166,7 @@ public final class BuildContext {
 
 		private void processPropertyAttribute(Object object, ClassInfo classInfo, String name, String value) {
 			setObjectProperty(object, classInfo,
-					classInfo.getSetter(name), ClassInfo.AccessorType.SETTER, name, value, false);
+					classInfo.getSetter(name), ClassInfo.AccessorType.SETTER, name, value);
 		}
 
 		private boolean processLangAttribute(Object object, String name, String value) {
@@ -227,20 +227,31 @@ public final class BuildContext {
 				PendingObject object = oldTop.asObject();
 				if(object != null) {
 					// popping an object
-					Level newTop = levelStack.getLast();
-					PendingProperty outerProperty = newTop.asProperty();
-					if(outerProperty != null) {
-						PendingObject outerObject = newTop.asObject();
-						PropertyInfo propertyInfo = outerObject.classInfo.getDefaultAdder();
-						if(propertyInfo == null)
-							propertyInfo = BuildContext.EMPTY_DEFAULT_ADDER_PROPERTY_INFO;
-						setObjectProperty(outerObject.object, outerObject.classInfo, propertyInfo,
-								ClassInfo.AccessorType.ADDER, null, object.object, false);
+					if(!object.skip && object.object instanceof VirtualElementClass) {
+						try {
+							((VirtualElementClass)object.object).mapToActual(object);
+						}
+						catch(ChoreoException ce) {
+							currentError = ce;
+							return;
+						}
 					}
-					else
-						setObjectProperty(outerProperty.object, outerProperty.classInfo,
-								outerProperty.propertyInfo, ClassInfo.AccessorType.ADDER,
-								outerProperty.propertyInfo.getName(), object.object, false);
+					if(!object.skip) {
+						Level newTop = levelStack.getLast();
+						PendingProperty outerProperty = newTop.asProperty();
+						if(outerProperty != null) {
+							PendingObject outerObject = newTop.asObject();
+							PropertyInfo propertyInfo = outerObject.classInfo.getDefaultAdder();
+							if(propertyInfo == null)
+								propertyInfo = BuildContext.EMPTY_DEFAULT_ADDER_PROPERTY_INFO;
+							setObjectProperty(outerObject.object, outerObject.classInfo, propertyInfo,
+									ClassInfo.AccessorType.ADDER, null, object.object);
+						}
+						else
+							setObjectProperty(outerProperty.object, outerProperty.classInfo,
+									outerProperty.propertyInfo, ClassInfo.AccessorType.ADDER,
+									outerProperty.propertyInfo.getName(), object.object);
+					}
 				}
 				else {
 					// popping a property
@@ -249,7 +260,7 @@ public final class BuildContext {
 		}
 
 		private void setObjectProperty(Object object, ClassInfo classInfo, PropertyInfo propertyInfo,
-				ClassInfo.AccessorType accessorType, String name, Object value, boolean isIgnorableWhitespace) {
+				ClassInfo.AccessorType accessorType, String name, Object value) {
 			if(propertyInfo == null) {
 				currentError = new NoSuchPropertyException(documentLocator,
 						classInfo.getSubject().getName(), name, accessorType);
@@ -288,28 +299,8 @@ public final class BuildContext {
 				case 0:
 					break;
 				case 1:
-					{
-						AccessorInfo accessor = candidates.get(0);
-						try {
-							accessor.getMethod().invoke(object, value);
-						}
-						catch(IllegalAccessException iae) {
-							currentError = new PropertyAccessException(documentLocator,
-									classInfo.getSubject().getName(), fauxName,
-									accessor.getMethod().toString(), iae);
-						}
-						catch(IllegalArgumentException iae) {
-							currentError = new PropertyAccessException(documentLocator,
-									classInfo.getSubject().getName(), fauxName,
-									accessor.getMethod().toString(), iae);
-						}
-						catch(InvocationTargetException ite) {
-							currentError = new PropertyAccessException(documentLocator,
-									classInfo.getSubject().getName(), fauxName,
-									accessor.getMethod().toString(), ite);
-						}
-						return;
-					}
+					setObjectPropertyWhitespace(object, classInfo, fauxName, candidates.get(0), value);
+					return;
 				default:
 					currentError = new AmbiguousAccessorException(documentLocator,
 							accessorType, fauxName, classInfo, value == null ? null : value.getClass());
@@ -334,31 +325,50 @@ public final class BuildContext {
 			}
 			switch(mapCount) {
 				case 0:
-					//TODO:
+					currentError = new NoMatchingAccessorException(documentLocator,
+							classInfo.getSubject().getName(), fauxName, accessorType,
+							value == null ? null : value.getClass().getName());
+					break;
 				case 1:
-					try {
-						singleAccessor.getMethod().invoke(object, singleMappedValue);
-					}
-					catch(IllegalAccessException iae) {
-						currentError = new PropertyAccessException(documentLocator,
-								classInfo.getSubject().getName(), fauxName,
-								singleAccessor.getMethod().toString(), iae);
-					}
-					catch(IllegalArgumentException iae) {
-						currentError = new PropertyAccessException(documentLocator,
-								classInfo.getSubject().getName(), fauxName,
-								singleAccessor.getMethod().toString(), iae);
-					}
-					catch(InvocationTargetException ite) {
-						currentError = new PropertyAccessException(documentLocator,
-								classInfo.getSubject().getName(), fauxName,
-								singleAccessor.getMethod().toString(), ite);
-					}
+					setObjectPropertyWhitespace(object, classInfo, fauxName, singleAccessor, singleMappedValue);
 					break;
 				default:
 					currentError = new AmbiguousAccessorException(documentLocator,
 							accessorType, fauxName, classInfo, fromType);
 					break;
+			}
+		}
+
+		private void setObjectPropertyWhitespace(Object object, ClassInfo classInfo, String fauxName,
+				AccessorInfo accessor, Object value) {
+			if(value == null || !(value instanceof String))
+				setObjectPropertyImpl(object, classInfo, fauxName, accessor, value);
+			else {
+				AccessorInfo.WhitespaceResult wsresult = accessor.applyWhitespacePolicy((String)value);
+				if(wsresult.isSet())
+					setObjectPropertyImpl(object, classInfo, fauxName, accessor, wsresult.getValue());
+			}
+		}
+
+		private void setObjectPropertyImpl(Object object, ClassInfo classInfo, String fauxName,
+				AccessorInfo accessor, Object value) {
+			try {
+				accessor.getMethod().invoke(object, value);
+			}
+			catch(IllegalAccessException iae) {
+				currentError = new PropertyAccessException(documentLocator,
+						classInfo.getSubject().getName(), fauxName,
+						accessor.getMethod().toString(), iae);
+			}
+			catch(IllegalArgumentException iae) {
+				currentError = new PropertyAccessException(documentLocator,
+						classInfo.getSubject().getName(), fauxName,
+						accessor.getMethod().toString(), iae);
+			}
+			catch(InvocationTargetException ite) {
+				currentError = new PropertyAccessException(documentLocator,
+						classInfo.getSubject().getName(), fauxName,
+						accessor.getMethod().toString(), ite);
 			}
 		}
 
@@ -379,11 +389,11 @@ public final class BuildContext {
 			PendingObject object = top.asObject();
 			if(object != null)
 				setObjectProperty(object.object, object.classInfo, BuildContext.EMPTY_DEFAULT_ADDER_PROPERTY_INFO,
-						ClassInfo.AccessorType.ADDER, null, text, text.trim().isEmpty());
+						ClassInfo.AccessorType.ADDER, null, text);
 			else {
 				PendingProperty property = top.asProperty();
 				setObjectProperty(property.object, property.classInfo, property.propertyInfo,
-						ClassInfo.AccessorType.ADDER, property.propertyInfo.getName(), text, text.trim().isEmpty());
+						ClassInfo.AccessorType.ADDER, property.propertyInfo.getName(), text);
 			}
 		}
 
@@ -397,13 +407,13 @@ public final class BuildContext {
 
 	}
 
-	private static final class PendingObject implements Level {
+	private static final class PendingObject implements Level, VirtualElementClass.ObjectState {
 
-		public final Object object;
+		public Object object;
 
 		public final ClassInfo classInfo;
 
-		public final boolean skip;
+		public boolean skip;
 
 		public PendingObject(Object object, ClassInfo classInfo, boolean skip) {
 			this.object = object;
@@ -417,6 +427,22 @@ public final class BuildContext {
 
 		public PendingProperty asProperty() {
 			return null;
+		}
+
+		public Object getValue() {
+			return object;
+		}
+
+		public void setValue(Object value) {
+			object = value;
+		}
+
+		public boolean isSkip() {
+			return skip;
+		}
+
+		public void setSkip(boolean skip) {
+			this.skip = skip;
 		}
 
 	}
