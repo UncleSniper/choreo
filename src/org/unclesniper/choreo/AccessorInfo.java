@@ -88,4 +88,18 @@ public final class AccessorInfo {
 		}
 	}
 
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("AccessorInfo { method = ");
+		sb.append(method.toString());
+		sb.append(", type = ");
+		sb.append(type.getName());
+		sb.append(", trimWhitespace = ");
+		sb.append(String.valueOf(trimWhitespace));
+		sb.append(", emptyStringPolicy = ");
+		sb.append(emptyStringPolicy.name());
+		sb.append(" }");
+		return sb.toString();
+	}
+
 }

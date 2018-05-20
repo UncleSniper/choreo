@@ -21,12 +21,13 @@ import org.xml.sax.SAXException;
 import java.lang.reflect.Method;
 import org.xml.sax.SAXParseException;
 import java.net.MalformedURLException;
+import org.xml.sax.helpers.XMLFilterImpl;
 import org.xml.sax.helpers.DefaultHandler;
 import javax.xml.parsers.SAXParserFactory;
 import java.lang.reflect.InvocationTargetException;
 import javax.xml.parsers.ParserConfigurationException;
 
-public final class BuildContext {
+public final class BuildContext implements ServiceRegistryFacade {
 
 	private final class BuildHandler extends DefaultHandler {
 
@@ -325,9 +326,11 @@ public final class BuildContext {
 			}
 			switch(mapCount) {
 				case 0:
-					currentError = new NoMatchingAccessorException(documentLocator,
-							classInfo.getSubject().getName(), fauxName, accessorType,
-							value == null ? null : value.getClass().getName());
+					if(accessorType != ClassInfo.AccessorType.ADDER || name != null || value == null
+							|| !(value instanceof String) || ((String)value).trim().length() > 0)
+						currentError = new NoMatchingAccessorException(documentLocator,
+								classInfo.getSubject().getName(), fauxName, accessorType,
+								value == null ? null : value.getClass().getName());
 					break;
 				case 1:
 					setObjectPropertyWhitespace(object, classInfo, fauxName, singleAccessor, singleMappedValue);
@@ -397,6 +400,30 @@ public final class BuildContext {
 			}
 		}
 
+		public InputSource resolveEntity(String publicID, String systemID) throws IOException, SAXException {
+			if(publicID != null || systemID == null || !systemID.startsWith("choreo:"))
+				return null;
+			String key = systemID.substring(7);
+			InputSource source;
+			try {
+				ChoreoEntityResolver mr = mappedEntityResolvers.get(key);
+				if(mr != null) {
+					source = mr.resolveEntity(key);
+					if(source != null)
+						return source;
+				}
+				for(ChoreoEntityResolver ur : unmappedEntityResolvers) {
+					source = ur.resolveEntity(key);
+					if(source != null)
+						return source;
+				}
+			}
+			catch(ChoreoException ce) {
+				currentError = ce;
+			}
+			return null;
+		}
+
 	}
 
 	private interface Level {
@@ -445,6 +472,18 @@ public final class BuildContext {
 			this.skip = skip;
 		}
 
+		public String toString() {
+			StringBuilder sb = new StringBuilder();
+			sb.append("PendingObject { object = ");
+			sb.append(object == null ? "<null>" : object.toString());
+			sb.append(", classInfo = ");
+			sb.append(classInfo.getSubject().getName());
+			sb.append(", skip = ");
+			sb.append(String.valueOf(skip));
+			sb.append(" }");
+			return sb.toString();
+		}
+
 	}
 
 	private static final class PendingProperty implements Level {
@@ -469,6 +508,18 @@ public final class BuildContext {
 			return this;
 		}
 
+		public String toString() {
+			StringBuilder sb = new StringBuilder();
+			sb.append("PendingProperty { object = ");
+			sb.append(object == null ? "<null>" : object.toString());
+			sb.append(", classInfo = ");
+			sb.append(classInfo.getSubject().getName());
+			sb.append(", propertyInfo = ");
+			sb.append(propertyInfo.toString());
+			sb.append(" }");
+			return sb.toString();
+		}
+
 	}
 
 	public static final File DEFAULT_MODULE_DIRECTORY
@@ -487,6 +538,8 @@ public final class BuildContext {
 	private static final PropertyInfo EMPTY_DEFAULT_ADDER_PROPERTY_INFO = new PropertyInfo(null);
 
 	private static final Map<Class<?>, Class<?>> VALUE_TYPE_TO_REFERENCE_TYPE;
+
+	private static final Set<String> EMPTY_STRING_SET = new HashSet<String>();
 
 	static {
 		VALUE_TYPE_TO_REFERENCE_TYPE = new HashMap<Class<?>, Class<?>>();
@@ -520,11 +573,18 @@ public final class BuildContext {
 
 	private Object rootObject;
 
-	private final Map<String, Object> serviceObjects = new HashMap<String, Object>();
+	private ServiceRegistryFacade serviceRegistry = new ServiceRegistry();
 
 	private StringBuilder charBuffer;
 
 	private final Set<PropertyTypeMapper> typeMappers = new HashSet<PropertyTypeMapper>();
+
+	private boolean refreshModules;
+
+	private final Map<String, ChoreoEntityResolver> mappedEntityResolvers
+			= new HashMap<String, ChoreoEntityResolver>();
+
+	private final List<ChoreoEntityResolver> unmappedEntityResolvers = new LinkedList<ChoreoEntityResolver>();
 
 	public BuildContext() {}
 
@@ -561,21 +621,29 @@ public final class BuildContext {
 		this.moduleDirectory = moduleDirectory;
 	}
 
+	public ServiceRegistryFacade getServiceRegistry() {
+		return serviceRegistry;
+	}
+
+	public void setServiceRegistry(ServiceRegistryFacade serviceRegistry) {
+		this.serviceRegistry = serviceRegistry;
+	}
+
 	public Iterable<String> getServiceObjectKeys() {
-		return serviceObjects.keySet();
+		return serviceRegistry == null ? BuildContext.EMPTY_STRING_SET : serviceRegistry.getServiceObjectKeys();
 	}
 
 	public Object getServiceObject(String key) {
-		return serviceObjects.get(key);
+		return serviceRegistry == null ? null : serviceRegistry.getServiceObject(key);
 	}
 
 	public void putServiceObject(String key, Object value) {
-		if(key == null)
-			throw new IllegalArgumentException("Service object key cannot be null");
-		if(value == null)
-			serviceObjects.remove(key);
+		if(serviceRegistry == null) {
+			if(key == null)
+				throw new IllegalArgumentException("Service object key cannot be null");
+		}
 		else
-			serviceObjects.put(key, value);
+			serviceRegistry.putServiceObject(key, value);
 	}
 
 	public Iterable<PropertyTypeMapper> getTypeMappers() {
@@ -591,16 +659,57 @@ public final class BuildContext {
 		return typeMappers.remove(mapper);
 	}
 
+	public boolean isRefreshModules() {
+		return refreshModules;
+	}
+
+	public void setRefreshModules(boolean refreshModules) {
+		this.refreshModules = refreshModules;
+	}
+
+	public Set<String> getEnitityResolverKeys() {
+		return mappedEntityResolvers.keySet();
+	}
+
+	public ChoreoEntityResolver getEntityResolver(String key) {
+		return mappedEntityResolvers.get(key);
+	}
+
+	public Iterable<ChoreoEntityResolver> getEntityResolvers() {
+		return unmappedEntityResolvers;
+	}
+
+	public void addEntityResolver(String key, ChoreoEntityResolver resolver) {
+		if(key == null) {
+			if(resolver != null)
+				unmappedEntityResolvers.add(resolver);
+		}
+		else {
+			if(resolver == null)
+				mappedEntityResolvers.remove(key);
+			else
+				mappedEntityResolvers.put(key, resolver);
+		}
+	}
+
+	public boolean removeEntityResolver(String key) {
+		return mappedEntityResolvers.remove(key) != null;
+	}
+
+	public boolean removeEntityResolver(ChoreoEntityResolver resolver) {
+		return unmappedEntityResolvers.remove(resolver);
+	}
+
 	public void parseDocument(InputSource source) throws ChoreoException, IOException {
 		SAXParserFactory spf = SAXParserFactory.newInstance();
 		spf.setNamespaceAware(true);
-		XMLReader xmlReader;
 		Locator oldLocator = saxHandler.getDocumentLocator();
 		saxHandler.setDocumentLocator(null);
 		try {
-			xmlReader = spf.newSAXParser().getXMLReader();
+			XMLReader xmlReader = spf.newSAXParser().getXMLReader();
 			xmlReader.setContentHandler(saxHandler);
 			xmlReader.setErrorHandler(saxHandler);
+			xmlReader.setEntityResolver(saxHandler);
 			xmlReader.parse(source);
 		}
 		catch(ParserConfigurationException pce) {
@@ -699,6 +808,27 @@ public final class BuildContext {
 
 	public Object getRootObject() {
 		return rootObject;
+	}
+
+	public Object getRootObject(boolean allowNull) throws ChoreoNullException {
+		if(rootObject == null && !allowNull)
+			throw new ChoreoNullException();
+		return rootObject;
+	}
+
+	public <RootT> RootT getRootObject(Class<RootT> requiredType) throws ChoreoRootTypeException {
+		if(rootObject == null)
+			return null;
+		if(!requiredType.isInstance(rootObject))
+			throw new ChoreoRootTypeException(requiredType, rootObject.getClass());
+		return requiredType.cast(rootObject);
+	}
+
+	public <RootT> RootT getRootObject(Class<RootT> requiredType, boolean allowNull)
+			throws ChoreoNullException, ChoreoRootTypeException {
+		if(rootObject == null && !allowNull)
+			throw new ChoreoNullException();
+		return getRootObject(requiredType);
 	}
 
 	public static BuildContext getCurrentContext() {

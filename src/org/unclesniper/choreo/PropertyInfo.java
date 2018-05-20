@@ -37,4 +37,29 @@ public final class PropertyInfo {
 		return accessors.get(type);
 	}
 
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("PropertyInfo { name = ");
+		if(name == null)
+			sb.append("<null>");
+		else {
+			sb.append('"');
+			sb.append(name);
+			sb.append('"');
+		}
+		sb.append(", accessors = {");
+		boolean first = true;
+		for(Map.Entry<Class<?>, AccessorInfo> entry : accessors.entrySet()) {
+			if(first)
+				first = false;
+			else
+				sb.append(", ");
+			sb.append(entry.getKey().getName());
+			sb.append(" -> ");
+			sb.append(entry.getValue().toString());
+		}
+		sb.append("} }");
+		return sb.toString();
+	}
+
 }

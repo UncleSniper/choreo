@@ -123,7 +123,7 @@ public final class Module {
 				hexChars[i * 2 + 1] = Module.HEX_DIGITS[v & 0x0F];
 			}
 			jarFile = new File(cache, new String(hexChars) + ".jar");
-			if(!jarFile.exists())
+			if(context.isRefreshModules() || !jarFile.exists())
 				download();
 			JarFile jar = new JarFile(jarFile);
 			readManifest(jar);
@@ -147,10 +147,14 @@ public final class Module {
 						break;
 					outs.write(buffer, 0, count);
 				}
+				outs.flush();
+				finished = true;
 			}
 		}
-		if(!finished)
-			jarFile.delete();
+		finally {
+			if(!finished)
+				jarFile.delete();
+		}
 	}
 
 	private void readManifest(JarFile jar) throws IOException {
