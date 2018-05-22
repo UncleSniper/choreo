@@ -240,7 +240,7 @@ public final class BuildContext implements ServiceRegistryFacade {
 					if(!object.skip) {
 						Level newTop = levelStack.getLast();
 						PendingProperty outerProperty = newTop.asProperty();
-						if(outerProperty != null) {
+						if(outerProperty == null) {
 							PendingObject outerObject = newTop.asObject();
 							PropertyInfo propertyInfo = outerObject.classInfo.getDefaultAdder();
 							if(propertyInfo == null)
