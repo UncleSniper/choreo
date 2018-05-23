@@ -11,6 +11,6 @@ import java.lang.annotation.RetentionPolicy;
 @Target(ElementType.TYPE)
 public @interface ElementClass {
 
-	String value();
+	String[] value();
 
 }
