@@ -14,8 +14,7 @@ public class CLIRunner {
 		bctx.parseDocument(new InputSource(new File(args[0]).toURI().toURL().toString()));
 		bctx.propagateError();
 		ChoreoTask task = bctx.getRootObject(ChoreoTask.class, false);
-		RunContext rctx = new RunContext(bctx.getServiceRegistry());
-		task.execute(rctx);
+		task.execute(bctx.run());
 	}
 
 }

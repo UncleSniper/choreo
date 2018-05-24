@@ -848,6 +848,10 @@ public final class BuildContext implements ServiceRegistryFacade {
 		typeMappers.add(ServiceObjectPropertyTypeMapper.instance);
 	}
 
+	public RunContext run() {
+		return new RunContext(serviceRegistry, currentClassLoader);
+	}
+
 	public static BuildContext getCurrentContext() {
 		return BuildContext.THREAD_LOCAL_CONTEXT.get();
 	}
