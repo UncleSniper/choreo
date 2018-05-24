@@ -317,7 +317,7 @@ public final class BuildContext implements ServiceRegistryFacade {
 					if(!mapper.canMapPropertyType(fromType, propertyType))
 						continue;
 					try {
-						singleMappedValue = mapper.mapPropertyValue(value, propertyType);
+						singleMappedValue = mapper.mapPropertyValue(BuildContext.this, value, propertyType);
 						singleAccessor = propertyAccessor;
 						++mapCount;
 					}
@@ -829,6 +829,23 @@ public final class BuildContext implements ServiceRegistryFacade {
 		if(rootObject == null && !allowNull)
 			throw new ChoreoNullException();
 		return getRootObject(requiredType);
+	}
+
+	public void addDecodePrimitiveTypeMappers() {
+		typeMappers.add(DecodeBytePropertyTypeMapper.instance);
+		typeMappers.add(DecodeShortPropertyTypeMapper.instance);
+		typeMappers.add(DecodeIntPropertyTypeMapper.instance);
+		typeMappers.add(DecodeLongPropertyTypeMapper.instance);
+		typeMappers.add(ParseFloatPropertyTypeMapper.instance);
+		typeMappers.add(ParseDoublePropertyTypeMapper.instance);
+		typeMappers.add(ParseBoolPropertyTypeMapper.instance);
+		typeMappers.add(StringToSingleCharPropertyTypeMapper.instance);
+	}
+
+	public void addMiscTypeMappers() {
+		typeMappers.add(EnumPropertyTypeMapper.instance);
+		typeMappers.add(ClassByNamePropertyTypeMapper.instance);
+		typeMappers.add(ServiceObjectPropertyTypeMapper.instance);
 	}
 
 	public static BuildContext getCurrentContext() {

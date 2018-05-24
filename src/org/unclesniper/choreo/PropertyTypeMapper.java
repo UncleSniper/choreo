@@ -4,6 +4,6 @@ public interface PropertyTypeMapper {
 
 	boolean canMapPropertyType(Class<?> fromType, Class<?> toType);
 
-	Object mapPropertyValue(Object value, Class<?> toType);
+	Object mapPropertyValue(BuildContext context, Object value, Class<?> toType);
 
 }

@@ -7,6 +7,8 @@ public class CLIRunner {
 
 	public static void main(String[] args) throws Exception {
 		BuildContext bctx = new BuildContext();
+		bctx.addDecodePrimitiveTypeMappers();
+		bctx.addMiscTypeMappers();
 		bctx.setRefreshModules(true);
 		bctx.addEntityResolver("narf", new StringEntityResolver("&quot;Heyooo!&quot;"));
 		bctx.parseDocument(new InputSource(new File(args[0]).toURI().toURL().toString()));
