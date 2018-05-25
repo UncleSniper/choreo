@@ -846,6 +846,7 @@ public final class BuildContext implements ServiceRegistryFacade {
 		typeMappers.add(EnumPropertyTypeMapper.instance);
 		typeMappers.add(ClassByNamePropertyTypeMapper.instance);
 		typeMappers.add(ServiceObjectPropertyTypeMapper.instance);
+		typeMappers.add(LocalePropertyTypeMapper.instance);
 	}
 
 	public RunContext run() {
