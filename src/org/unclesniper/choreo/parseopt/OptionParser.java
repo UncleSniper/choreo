@@ -1,6 +1,8 @@
 package org.unclesniper.choreo.parseopt;
 
+import java.util.Map;
 import java.util.List;
+import java.util.HashMap;
 import java.util.LinkedList;
 import org.unclesniper.choreo.Doom;
 
@@ -10,6 +12,18 @@ public class OptionParser implements WordAction {
 		SHORT,
 		LONG_SHORT,
 		LONG
+	}
+
+	private static final Map<String, Boolean> BOOLEAN_RENDITIONS;
+
+	static {
+		BOOLEAN_RENDITIONS = new HashMap<String, Boolean>();
+		BOOLEAN_RENDITIONS.put("false", false);
+		BOOLEAN_RENDITIONS.put("no", false);
+		BOOLEAN_RENDITIONS.put("off", false);
+		BOOLEAN_RENDITIONS.put("true", true);
+		BOOLEAN_RENDITIONS.put("yes", true);
+		BOOLEAN_RENDITIONS.put("on", true);
 	}
 
 	private OptionLogic logic;
@@ -55,7 +69,7 @@ public class OptionParser implements WordAction {
 		this.nonOptionAction = nonOptionAction;
 	}
 
-	public Iterable<String> getNonOptionWords() {
+	public List<String> getNonOptionWords() {
 		return nonOptionWords;
 	}
 
@@ -116,8 +130,14 @@ public class OptionParser implements WordAction {
 				optionIsLong = true;
 				if(logic.hasFlags(OptionLogic.FL_SINGLE_LONG_OPTIONS))
 					option = logic.getLongOption(longName);
-				if(option == null)
+				if(option == null) {
+					if(logic.hasFlags(OptionLogic.FL_UNRECOGNIZED_TERMINATES)) {
+						terminated = true;
+						(nonOptionAction == null ? this : nonOptionAction).wordEncountered(null, word);
+						return;
+					}
 					throw new UnrecognizedOptionException(longName, OptionType.SHORT, word);
+				}
 			}
 			else
 				optionIsLong = false;
@@ -209,8 +229,14 @@ public class OptionParser implements WordAction {
 			// long chosen
 		}
 		else {
-			if(longOption == null)
+			if(longOption == null) {
+				if(logic.hasFlags(OptionLogic.FL_UNRECOGNIZED_TERMINATES)) {
+					terminated = true;
+					(nonOptionAction == null ? this : nonOptionAction).wordEncountered(null, word);
+					return;
+				}
 				throw new UnrecognizedOptionException(word.substring(1), OptionType.SHORT, word);
+			}
 			// definitely long
 		}
 		// so it's long
@@ -331,9 +357,15 @@ public class OptionParser implements WordAction {
 			longArg = null;
 		}
 		OptionLogic.Option option = logic.getLongOption(longName);
-		if(option == null)
+		if(option == null) {
+			if(logic.hasFlags(OptionLogic.FL_UNRECOGNIZED_TERMINATES)) {
+				terminated = true;
+				(nonOptionAction == null ? this : nonOptionAction).wordEncountered(null, word);
+				return;
+			}
 			throw new UnrecognizedOptionException(longName, OptionType.LONG,
 					longArg == null ? word : word.substring(0, sepPosition));
+		}
 		if(longArg != null) {
 			if(option.getArity() == OptionLogic.Arity.NO_ARGUMENT)
 				throw new ExcessOptionArgumentException(longName, OptionType.LONG, word.substring(0, sepPosition));
@@ -411,6 +443,15 @@ public class OptionParser implements WordAction {
 
 	public void wordEncountered(String key, String value) {
 		nonOptionWords.add(value);
+	}
+
+	public static boolean requireBoolean(String optionRendition, String argumentSpecifier)
+			throws IllegalOptionArgumentException {
+		Boolean value = OptionParser.BOOLEAN_RENDITIONS.get(argumentSpecifier.trim().toLowerCase());
+		if(value == null)
+			throw new IllegalOptionArgumentException(optionRendition,
+					"a boolean value (such as 'true' or 'false')", argumentSpecifier);
+		return value;
 	}
 
 }

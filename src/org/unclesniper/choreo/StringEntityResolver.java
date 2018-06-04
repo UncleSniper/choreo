@@ -7,8 +7,15 @@ public class StringEntityResolver implements ChoreoEntityResolver {
 
 	private String value;
 
+	private boolean escape;
+
 	public StringEntityResolver(String value) {
 		this.value = value;
+	}
+
+	public StringEntityResolver(String value, boolean escape) {
+		this.value = value;
+		this.escape = escape;
 	}
 
 	public String getValue() {
@@ -19,8 +26,23 @@ public class StringEntityResolver implements ChoreoEntityResolver {
 		this.value = value;
 	}
 
+	public boolean isEscape() {
+		return escape;
+	}
+
+	public void setEscape(boolean escape) {
+		this.escape = escape;
+	}
+
 	public InputSource resolveEntity(String choreoID) {
-		InputSource source = new InputSource(new StringReader(value == null ? "" : value));
+		String v;
+		if(value == null)
+			v = "";
+		else if(escape)
+			v = XMLUtils.escape(value);
+		else
+			v = value;
+		InputSource source = new InputSource(new StringReader(v));
 		source.setSystemId("choreo:" + choreoID);
 		return source;
 	}
