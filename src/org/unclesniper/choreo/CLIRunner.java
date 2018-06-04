@@ -11,7 +11,7 @@ public class CLIRunner {
 		bctx.addMiscTypeMappers();
 		bctx.setRefreshModules(true);
 		bctx.addEntityResolver("narf", new StringEntityResolver("&quot;Heyooo!&quot;"));
-		bctx.parseDocument(new InputSource(new File(args[0]).toURI().toURL().toString()));
+		bctx.parseFile(args[0]);
 		bctx.propagateError();
 		ChoreoTask task = bctx.getRootObject(ChoreoTask.class, false);
 		task.execute(bctx.run());

@@ -1,6 +1,7 @@
 package org.unclesniper.choreo;
 
 import java.net.URL;
+import java.net.URI;
 import java.io.File;
 import java.util.Map;
 import java.util.Set;
@@ -569,7 +570,7 @@ public final class BuildContext implements ServiceRegistryFacade {
 
 	private File moduleDirectory;
 
-	private final Deque<Level> levelStack = new LinkedList<Level>();
+	private Deque<Level> levelStack;
 
 	private Object rootObject;
 
@@ -705,6 +706,8 @@ public final class BuildContext implements ServiceRegistryFacade {
 		spf.setNamespaceAware(true);
 		Locator oldLocator = saxHandler.getDocumentLocator();
 		saxHandler.setDocumentLocator(null);
+		Deque<Level> oldLevelStack = levelStack;
+		levelStack = new LinkedList<Level>();
 		try {
 			XMLReader xmlReader = spf.newSAXParser().getXMLReader();
 			xmlReader.setContentHandler(saxHandler);
@@ -725,7 +728,28 @@ public final class BuildContext implements ServiceRegistryFacade {
 		}
 		finally {
 			saxHandler.setDocumentLocator(oldLocator);
+			levelStack = oldLevelStack;
 		}
+	}
+
+	public void parseURL(URL url) throws ChoreoException, IOException {
+		parseDocument(new InputSource(url.toString()));
+	}
+
+	public void parseURL(String url) throws ChoreoException, IOException {
+		parseDocument(new InputSource(url));
+	}
+
+	public void parseURI(URI uri) throws ChoreoException, IOException {
+		parseDocument(new InputSource(uri.toURL().toString()));
+	}
+
+	public void parseFile(File file) throws ChoreoException, IOException {
+		parseURI(file.toURI());
+	}
+
+	public void parseFile(String path) throws ChoreoException, IOException {
+		parseURI(new File(path).toURI());
 	}
 
 	public Module getModule(URL url)
