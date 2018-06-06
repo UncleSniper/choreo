@@ -47,4 +47,15 @@ public class StringEntityResolver implements ChoreoEntityResolver {
 		return source;
 	}
 
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append(StringEntityResolver.class.getName());
+		builder.append("(\"");
+		builder.append(value);
+		builder.append("\", ");
+		builder.append(escape);
+		builder.append(')');
+		return builder.toString();
+	}
+
 }

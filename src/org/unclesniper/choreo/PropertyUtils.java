@@ -11,7 +11,7 @@ public final class PropertyUtils {
 
 	public interface EntitySink {
 
-		void putEntityResolver(String key, ChoreoEntityResolver resolver);
+		void addEntityResolver(String key, ChoreoEntityResolver resolver);
 
 	}
 
@@ -56,13 +56,13 @@ public final class PropertyUtils {
 		if(escape)
 			key = key.substring(2);
 		if(key.startsWith("string.") && key.length() > 7)
-			sink.putEntityResolver(key.substring(7), new StringEntityResolver(value, escape));
+			sink.addEntityResolver(key.substring(7), new StringEntityResolver(value, escape));
 		else if(key.startsWith("file.") && key.length() > 5)
-			sink.putEntityResolver(key.substring(5), new FileEntityResolver(value, escape));
+			sink.addEntityResolver(key.substring(5), new FileEntityResolver(value, escape));
 		else if(key.startsWith("url.") && key.length() > 4)
-			sink.putEntityResolver(key.substring(4), new URLEntityResolver(value, escape));
+			sink.addEntityResolver(key.substring(4), new URLEntityResolver(value, escape));
 		else
-			sink.putEntityResolver(key, new StringEntityResolver(value, escape));
+			sink.addEntityResolver(key, new StringEntityResolver(value, escape));
 	}
 
 	public static void parseProperties(Properties properties, String file, EntitySink sink)

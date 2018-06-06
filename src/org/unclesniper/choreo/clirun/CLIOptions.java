@@ -1,10 +1,14 @@
 package org.unclesniper.choreo.clirun;
 
+import java.net.URL;
 import java.io.File;
 import java.util.Map;
+import java.util.List;
 import java.util.HashMap;
+import java.util.LinkedList;
 import org.unclesniper.choreo.CLIRunner;
 import org.unclesniper.choreo.BuildContext;
+import org.unclesniper.choreo.PropertyUtils;
 import org.unclesniper.choreo.PropertyTypeMapper;
 import org.unclesniper.choreo.parseopt.WordAction;
 import org.unclesniper.choreo.parseopt.OptionSpec;
@@ -13,7 +17,7 @@ import org.unclesniper.choreo.ChoreoEntityResolver;
 import org.unclesniper.choreo.parseopt.OptionPrinter;
 import org.unclesniper.choreo.parseopt.UsageWordAction;
 
-public class CLIOptions {
+public class CLIOptions implements PropertyUtils.EntitySink {
 
 	public enum GraphSourceType {
 		FILE,
@@ -28,6 +32,8 @@ public class CLIOptions {
 	public static final String DEFAULT_COMMON_PROPERTIES_FILE = "common.choreo.properties";
 
 	public static final String DEFAULT_SITE_PROPERTIES_FILE = "site.choreo.properties";
+
+	private static final String LINE_SEPARATOR = System.getProperty("line.separator");
 
 	private String commandPrefix;
 
@@ -46,6 +52,10 @@ public class CLIOptions {
 	private boolean refreshModules;
 
 	private final Map<String, ChoreoEntityResolver> entities = new HashMap<String, ChoreoEntityResolver>();
+
+	private final Map<String, URL> mappedServices = new HashMap<String, URL>();
+
+	private final List<URL> unmappedServices = new LinkedList<URL>();
 
 	public CLIOptions() {
 		this(null);
@@ -127,12 +137,45 @@ public class CLIOptions {
 		return entities.entrySet();
 	}
 
+	public ChoreoEntityResolver getEntity(String key) {
+		return entities.get(key);
+	}
+
 	public void addEntityResolver(String key, ChoreoEntityResolver resolver) {
 		key.length();
 		if(resolver == null)
 			entities.remove(key);
 		else
 			entities.put(key, resolver);
+	}
+
+	public Iterable<String> getMappedServiceKeys() {
+		return mappedServices.keySet();
+	}
+
+	public Iterable<Map.Entry<String, URL>> getMappedServices() {
+		return mappedServices.entrySet();
+	}
+
+	public URL getMappedService(String key) {
+		return mappedServices.get(key);
+	}
+
+	public void addMappedService(String key, URL url) {
+		key.length();
+		if(url == null)
+			mappedServices.remove(key);
+		else
+			mappedServices.put(key, url);
+	}
+
+	public Iterable<URL> getUnmappedServices() {
+		return unmappedServices;
+	}
+
+	public void addUnmappedService(URL url) {
+		if(url != null)
+			unmappedServices.add(url);
 	}
 
 	public OptionLogic createOptionLogic() {
@@ -153,7 +196,7 @@ public class CLIOptions {
 					"Read task object graph from given FILE. Note that only the last among "
 					+ "all --choreography, --choreo-url and --predef takes effect."
 					+ "|||Defaults to '" + CLIOptions.DEFAULT_CHOREOGRAPHY_FILE + "'.")
-			.option("choreo-url", "=URL", 'u', " URL",
+			.option("choreo-url", "=URL", 'r', " URL",
 					new ChoreoURLAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
 					"Read task object graph from given URL. See --choreography for notes.")
 			.option("predef", "=NAME", 'p', " NAME",
@@ -221,6 +264,22 @@ public class CLIOptions {
 					"Set choreo entity by given KEY to resolve to the literal contants of "
 					+ "the document retrieved from the given URL. In other words, the "
 					+ "result of escaping the document contents constitutes the entity.")
+			.option("properties", " FILE", 'i', " FILE",
+					new PropertiesAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read choreo entity definitions from given property FILE. This option "
+					+ "can be used any number of times to import any number of files.")
+			.option("property", " KEY=VALUE", 'P', " KEY=VALUE",
+					new PropertyAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given property, as though KEY=VALUE was a "
+					+ "property definition in a file read with --properties.")
+			.option("service", " KEY=FILE", 's', " KEY=FILE",
+					new FileServiceAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Before reading the main task object graph, read a supplementary "
+					+ "object graph from the given FILE. If the given KEY is not empty, "
+					+ "bind the root object of that graph to that service key.")
+			.option("service-url", " KEY=URL", 'S', " KEY=URL",
+					new URLServiceAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Like --service, but read graph from given URL instead of a file.")
 			.option("help", new UsageWordAction(printer,
 					"Usage: " + commandPrefix + " [choreo-options...] [script-arguments...]",
 					"Options:"),
@@ -233,10 +292,99 @@ public class CLIOptions {
 		StringBuilder builder = new StringBuilder();
 		ctx.addMiscTypeMappers();
 		for(PropertyTypeMapper mapper : ctx.getTypeMappers()) {
-			builder.append("|||~~- ");
+			builder.append("|||~~");
 			builder.append(mapper.getClass().getName());
 		}
 		return builder.toString();
+	}
+
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append(CLIOptions.class.getName());
+		builder.append(" {");
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		CLIOptions.dumpStringField("commandPrefix", commandPrefix, builder);
+		CLIOptions.dumpStringField("graphSource", graphSource, builder);
+		CLIOptions.dumpPlainField("graphSourceType", graphSourceType.name(), builder);
+		CLIOptions.dumpStringField("commonProperties", commonProperties, builder);
+		CLIOptions.dumpStringField("siteProperties", siteProperties, builder);
+		CLIOptions.dumpPlainField("searchUp", searchUp, builder);
+		CLIOptions.dumpPlainField("miscTypes", miscTypes, builder);
+		CLIOptions.dumpPlainField("refreshModules", refreshModules, builder);
+		// begin entities
+		builder.append("    entities = {");
+		boolean first = true;
+		for(Map.Entry<String, ChoreoEntityResolver> entry : entities.entrySet()) {
+			if(first)
+				first = false;
+			else
+				builder.append(',');
+			builder.append(CLIOptions.LINE_SEPARATOR);
+			builder.append("        \"");
+			builder.append(entry.getKey());
+			builder.append("\" -> ");
+			builder.append(entry.getValue().toString());
+		}
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		builder.append("    },");
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		// end entities
+		// begin mappedServices
+		builder.append("    mappedServices = {");
+		first = true;
+		for(Map.Entry<String, URL> entry : mappedServices.entrySet()) {
+			if(first)
+				first = false;
+			else
+				builder.append(',');
+			builder.append(CLIOptions.LINE_SEPARATOR);
+			builder.append("        \"");
+			builder.append(entry.getKey());
+			builder.append("\" -> \"");
+			builder.append(entry.getValue().toString());
+			builder.append('"');
+		}
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		builder.append("    },");
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		// end mappedServices
+		// begin unmappedServices
+		builder.append("    unmappedServices = [");
+		first = true;
+		for(URL service : unmappedServices) {
+			if(first)
+				first = false;
+			else
+				builder.append(',');
+			builder.append(CLIOptions.LINE_SEPARATOR);
+			builder.append("        \"");
+			builder.append(service.toString());
+			builder.append('"');
+		}
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		builder.append("    ]");
+		builder.append(CLIOptions.LINE_SEPARATOR);
+		// end unmappedServices
+		builder.append('}');
+		return builder.toString();
+	}
+
+	private static void dumpStringField(String name, String value, StringBuilder builder) {
+		builder.append("    ");
+		builder.append(name);
+		builder.append(" = \"");
+		builder.append(value);
+		builder.append("\",");
+		builder.append(CLIOptions.LINE_SEPARATOR);
+	}
+
+	private static void dumpPlainField(String name, Object value, StringBuilder builder) {
+		builder.append("    ");
+		builder.append(name);
+		builder.append(" = ");
+		builder.append(value.toString());
+		builder.append(',');
+		builder.append(CLIOptions.LINE_SEPARATOR);
 	}
 
 }

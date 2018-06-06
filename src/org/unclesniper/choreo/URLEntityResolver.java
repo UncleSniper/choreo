@@ -80,4 +80,15 @@ public class URLEntityResolver implements ChoreoEntityResolver {
 		}
 	}
 
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append(URLEntityResolver.class.getName());
+		builder.append("(\"");
+		builder.append(url.toString());
+		builder.append("\", ");
+		builder.append(escape);
+		builder.append(')');
+		return builder.toString();
+	}
+
 }

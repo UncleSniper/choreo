@@ -79,4 +79,15 @@ public class FileEntityResolver implements ChoreoEntityResolver {
 		}
 	}
 
+	public String toString() {
+		StringBuilder builder = new StringBuilder();
+		builder.append(FileEntityResolver.class.getName());
+		builder.append("(\"");
+		builder.append(path.getPath());
+		builder.append("\", ");
+		builder.append(escape);
+		builder.append(')');
+		return builder.toString();
+	}
+
 }

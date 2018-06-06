@@ -40,6 +40,7 @@ public class CLIRunner {
 		String[] rest = optParser.getNonOptionWords().toArray(CLIRunner.STRING_ARRAY_TEMPLATE);
 		for(String r : rest)
 			System.out.println("remainder: " + r);
+		System.out.println(options);
 	}
 
 }

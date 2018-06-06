@@ -11,6 +11,8 @@ public class UsageWordAction implements WordAction {
 
 	private final List<String> headers = new LinkedList<String>();
 
+	private int status;
+
 	public UsageWordAction(OptionPrinter printer, String... headers) {
 		this(printer, null, headers);
 	}
@@ -51,6 +53,14 @@ public class UsageWordAction implements WordAction {
 			headers.add(line);
 	}
 
+	public int getStatus() {
+		return status;
+	}
+
+	public void setStatus(int status) {
+		this.status = status;
+	}
+
 	public void wordEncountered(String key, String value) {
 		if(sink != null) {
 			for(String line : headers) {
@@ -68,6 +78,8 @@ public class UsageWordAction implements WordAction {
 			}
 			printer.printHelp(System.err);
 		}
+		if(status >= 0)
+			throw new StopExecution(status);
 	}
 
 }
