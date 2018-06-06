@@ -1,13 +1,25 @@
 package org.unclesniper.choreo.clirun;
 
 import java.io.File;
+import java.util.Map;
+import java.util.HashMap;
 import org.unclesniper.choreo.CLIRunner;
 import org.unclesniper.choreo.BuildContext;
 import org.unclesniper.choreo.PropertyTypeMapper;
 import org.unclesniper.choreo.parseopt.WordAction;
+import org.unclesniper.choreo.parseopt.OptionSpec;
 import org.unclesniper.choreo.parseopt.OptionLogic;
+import org.unclesniper.choreo.ChoreoEntityResolver;
+import org.unclesniper.choreo.parseopt.OptionPrinter;
+import org.unclesniper.choreo.parseopt.UsageWordAction;
 
 public class CLIOptions {
+
+	public enum GraphSourceType {
+		FILE,
+		URL,
+		PREDEF
+	}
 
 	public static final String DEFAULT_COMMAND_PREFIX = "java " + CLIRunner.class.getName();
 
@@ -18,6 +30,22 @@ public class CLIOptions {
 	public static final String DEFAULT_SITE_PROPERTIES_FILE = "site.choreo.properties";
 
 	private String commandPrefix;
+
+	private String graphSource = CLIOptions.DEFAULT_CHOREOGRAPHY_FILE;
+
+	private GraphSourceType graphSourceType = GraphSourceType.FILE;
+
+	private String commonProperties = CLIOptions.DEFAULT_COMMON_PROPERTIES_FILE;
+
+	private String siteProperties = CLIOptions.DEFAULT_SITE_PROPERTIES_FILE;
+
+	private boolean searchUp = true;
+
+	private boolean miscTypes = true;
+
+	private boolean refreshModules;
+
+	private final Map<String, ChoreoEntityResolver> entities = new HashMap<String, ChoreoEntityResolver>();
 
 	public CLIOptions() {
 		this(null);
@@ -35,51 +63,76 @@ public class CLIOptions {
 		this.commandPrefix = commandPrefix == null ? CLIOptions.DEFAULT_COMMAND_PREFIX : commandPrefix;
 	}
 
-	public void usage() {
-		System.err.println("Usage: " + commandPrefix + " [choreo-options...] [script-arguments...]");
-		System.err.println("Options:");
-		System.err.println("    --choreography=FILE               Read task object graph from given FILE. Note that only the last among");
-		System.err.println("                                      all --choreography, --choreo-url and --predef takes effect.");
-		System.err.println("                                      Defaults to '" + CLIOptions.DEFAULT_CHOREOGRAPHY_FILE + "'.");
-		System.err.println("    -c FILE                           same as --choreography");
-		System.err.println("    --choreo-url=URL                  Read task object graph from given URL. See --choreography for notes.");
-		System.err.println("    -u URL                            same as --choreo-url");
-		System.err.println("    --predef=NAME                     Read task object graph from predefined (builtin) file by the given");
-		System.err.println("                                      NAME. See --choreography for notes.");
-		System.err.println("    -p NAME                           same as --predef");
-		System.err.println("    --common-properties=FILE          Read project entity definitions from given FILE. If --choreography");
-		System.err.println("                                      (or none of --choreography, --choreo-url or --predef) is used,");
-		System.err.println("                                      and the FILE name does not contain any file separator ('" + File.separator + "')");
-		System.err.println("                                      characters, the FILE is expected to be in the same directory as");
-		System.err.println("                                      the choreography file. Otherwise, it is expected to be in the");
-		System.err.println("                                      JVM working directory.");
-		System.err.println("                                      Defaults to '" + CLIOptions.DEFAULT_COMMON_PROPERTIES_FILE + "'.");
-		System.err.println("    --site-properties=FILE            Read site entity definitions from given FILE. The pathname is");
-		System.err.println("                                      resolved in the same manner as --common-properties.");
-		System.err.println("                                      Defaults to '" + CLIOptions.DEFAULT_SITE_PROPERTIES_FILE + "'.");
-		System.err.println("    --search-up=true|false            Whether to search all directories from the JVM working directory to the");
-		System.err.println("                                      filesystem root for the file given by --choreography, as opposed to only");
-		System.err.println("                                      searching the current working directory. Note that this is always");
-		System.err.println("                                      inherently 'false' if the name of that file contains a file separator");
-		System.err.println("                                      ('" + File.separator + "') character or if --choreo-url or --predef is used.");
-		System.err.println("                                      Defaults to 'true'.");
-		System.err.println("    --misc-types=true|false           Whether to use builtin non-primitive property type mappers.");
-		System.err.println("                                      At present, this includes:");
-		{
-			BuildContext ctx = new BuildContext();
-			ctx.addMiscTypeMappers();
-			for(PropertyTypeMapper mapper : ctx.getTypeMappers())
-				System.err.println("                                        - " + mapper.getClass().getName());
-		}
-		System.err.println("                                      Defaults to 'true'.");
-		System.err.println("    --refresh-modules[=true|false]    Whether to retrieve modules even if they are already cached.");
-		System.err.println("                                      Defaults to 'false' if the option is not used,");
-		System.err.println("                                      and to 'true' of the argument is omitted.");
-		System.err.println("    -R                                same as --refresh-modules");
+	public String getGraphSource() {
+		return graphSource;
 	}
 
-	public WordAction getUsageAction() {
-		return new UsageAction(this);
+	public void setGraphSource(String graphSource) {
+		this.graphSource = graphSource;
+	}
+
+	public GraphSourceType getGraphSourceType() {
+		return graphSourceType;
+	}
+
+	public void setGraphSourceType(GraphSourceType graphSourceType) {
+		this.graphSourceType = graphSourceType;
+	}
+
+	public String getCommonProperties() {
+		return commonProperties;
+	}
+
+	public void setCommonProperties(String commonProperties) {
+		this.commonProperties = commonProperties;
+	}
+
+	public String getSiteProperties() {
+		return siteProperties;
+	}
+
+	public void setSiteProperties(String siteProperties) {
+		this.siteProperties = siteProperties;
+	}
+
+	public boolean isSearchUp() {
+		return searchUp;
+	}
+
+	public void setSearchUp(boolean searchUp) {
+		this.searchUp = searchUp;
+	}
+
+	public boolean isMiscTypes() {
+		return miscTypes;
+	}
+
+	public void setMiscTypes(boolean miscTypes) {
+		this.miscTypes = miscTypes;
+	}
+
+	public boolean isRefreshModules() {
+		return refreshModules;
+	}
+
+	public void setRefreshModules(boolean refreshModules) {
+		this.refreshModules = refreshModules;
+	}
+
+	public Iterable<String> getEntityKeys() {
+		return entities.keySet();
+	}
+
+	public Iterable<Map.Entry<String, ChoreoEntityResolver>> getEntities() {
+		return entities.entrySet();
+	}
+
+	public void addEntityResolver(String key, ChoreoEntityResolver resolver) {
+		key.length();
+		if(resolver == null)
+			entities.remove(key);
+		else
+			entities.put(key, resolver);
 	}
 
 	public OptionLogic createOptionLogic() {
@@ -93,8 +146,97 @@ public class CLIOptions {
 			| OptionLogic.FL_BAREWORD_TERMINATES
 			| OptionLogic.FL_UNRECOGNIZED_TERMINATES
 		);
-		logic.addLongOption("help", getUsageAction());
+		OptionPrinter printer = new OptionPrinter();
+		OptionSpec spec = new OptionSpec(logic, printer)
+			.option("choreography", "=FILE", 'c', " FILE",
+					new ChoreographyAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read task object graph from given FILE. Note that only the last among "
+					+ "all --choreography, --choreo-url and --predef takes effect."
+					+ "|||Defaults to '" + CLIOptions.DEFAULT_CHOREOGRAPHY_FILE + "'.")
+			.option("choreo-url", "=URL", 'u', " URL",
+					new ChoreoURLAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read task object graph from given URL. See --choreography for notes.")
+			.option("predef", "=NAME", 'p', " NAME",
+					new PredefAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read task object graph from predefined (builtin) file by the given NAME. "
+					+ "See --choreography for notes.")
+			.option("common-properties", "=FILE",
+					new CommonPropertiesAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read project entity definitions from given FILE. If --choreography "
+					+ "(or none of --choreography, --choreo-url or --predef) is used, "
+					+ "and the FILE name does not contain any file separator ('" + File.separator
+					+ "') characters, the FILE is expected to be in the same directory "
+					+ "as the choreography file. Otherwise, it is expected to be in the "
+					+ "JVM working directory."
+					+ "|||Defaults to '" + CLIOptions.DEFAULT_SITE_PROPERTIES_FILE + "'.")
+			.option("site-properties", "=FILE",
+					new SitePropertiesAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Read site entity definitions from given FILE. The path name is "
+					+ "resolved in the same manner as --common-properties."
+					+ "|||Defaults to '" + CLIOptions.DEFAULT_SITE_PROPERTIES_FILE + "'.")
+			.option("search-up", "=true|false",
+					new SearchUpAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Whether to search all directories from the JVM working directory "
+					+ "to the filesystem root for the file given by --choreography, as "
+					+ "opposed to only searching the current working directory. Note that "
+					+ "this is always inherently 'false' if the name of that file contains "
+					+ "a file separator ('" + File.separator + "') character or if "
+					+ "--choreo-url or --predef is used."
+					+ "|||Defaults to 'true'.")
+			.option("misc-types", "=true|false",
+					new MiscTypesAction(this), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Whether to use builtin non-primitive property type mappers. "
+					+ "At present, this includes:" + CLIOptions.getMiscTypeMappers()
+					+ "|||Defaults to 'true'.")
+			.option("refresh-modules", "[=true|false]",
+					new RefreshModulesAction(this), OptionLogic.Arity.OPTIONAL_ARGUMENT,
+					"Whether to retrieve modules even if they are already cached."
+					+ "|||Defaults to 'false' if the option is not used, and to "
+					+ "'true' if the argument is omitted.")
+			.option('R', null, new RefreshModulesAction(this), "same as --refresh-modules")
+			.option("entity", " KEY=VALUE", 'e', " KEY=VALUE",
+					new StringEntityAction(this, false), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve to the string VALUE.")
+			.option("esc-entity", " KEY=VALUE", 'E', " KEY=VALUE",
+					new StringEntityAction(this, true), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve to the literal string VALUE. "
+					+ "In other words, this is equivalent to handing the result of escaping "
+					+ "the VALUE to --entity.")
+			.option("entity-file", " KEY=PATH", 'f', " KEY=PATH",
+					new FileEntityAction(this, false), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve to the contents of the file "
+					+ "by the given PATH name.")
+			.option("esc-entity-file", " KEY=PATH", 'F', " KEY=PATH",
+					new FileEntityAction(this, true), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve to the literal contents of "
+					+ "the file by the given PATH name. The contents of the file are run "
+					+ "through an escaping filter before reaching the XML parser.")
+			.option("entity-url", " KEY=URL", 'u', " KEY=URL",
+					new URLEntityAction(this, false), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve as the given URL. In other "
+					+ "words, the contents of the document retrieved from the URL "
+					+ "constitute the entity.")
+			.option("esc-entity-url", " KEY=URL", 'U', " KEY=URL",
+					new URLEntityAction(this, true), OptionLogic.Arity.REQUIRED_ARGUMENT,
+					"Set choreo entity by given KEY to resolve to the literal contants of "
+					+ "the document retrieved from the given URL. In other words, the "
+					+ "result of escaping the document contents constitutes the entity.")
+			.option("help", new UsageWordAction(printer,
+					"Usage: " + commandPrefix + " [choreo-options...] [script-arguments...]",
+					"Options:"),
+					"Print this helpful message and quit.");
 		return logic;
+	}
+
+	private static String getMiscTypeMappers() {
+		BuildContext ctx = new BuildContext();
+		StringBuilder builder = new StringBuilder();
+		ctx.addMiscTypeMappers();
+		for(PropertyTypeMapper mapper : ctx.getTypeMappers()) {
+			builder.append("|||~~- ");
+			builder.append(mapper.getClass().getName());
+		}
+		return builder.toString();
 	}
 
 }

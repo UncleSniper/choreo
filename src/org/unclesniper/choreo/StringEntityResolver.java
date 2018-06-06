@@ -10,7 +10,7 @@ public class StringEntityResolver implements ChoreoEntityResolver {
 	private boolean escape;
 
 	public StringEntityResolver(String value) {
-		this.value = value;
+		this(value, false);
 	}
 
 	public StringEntityResolver(String value, boolean escape) {
