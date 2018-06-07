@@ -14,6 +14,6 @@ public interface VirtualElementClass {
 
 	}
 
-	void mapToActual(ObjectState state) throws ChoreoException;
+	void mapToActual(ObjectState state, BuildContext context) throws ChoreoException;
 
 }

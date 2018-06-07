@@ -231,7 +231,7 @@ public final class BuildContext implements ServiceRegistryFacade {
 					// popping an object
 					if(!object.skip && object.object instanceof VirtualElementClass) {
 						try {
-							((VirtualElementClass)object.object).mapToActual(object);
+							((VirtualElementClass)object.object).mapToActual(object, BuildContext.this);
 						}
 						catch(ChoreoException ce) {
 							currentError = ce;
