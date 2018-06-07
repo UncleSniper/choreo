@@ -5,12 +5,16 @@ import java.io.File;
 import java.util.Map;
 import java.util.List;
 import java.util.HashMap;
+import java.io.IOException;
 import java.util.LinkedList;
+import org.unclesniper.choreo.Doom;
 import org.unclesniper.choreo.CLIRunner;
+import java.nio.file.NoSuchFileException;
 import org.unclesniper.choreo.BuildContext;
 import org.unclesniper.choreo.PropertyUtils;
+import org.unclesniper.choreo.ChoreoException;
 import org.unclesniper.choreo.PropertyTypeMapper;
-import org.unclesniper.choreo.parseopt.WordAction;
+import org.unclesniper.choreo.resource.Resources;
 import org.unclesniper.choreo.parseopt.OptionSpec;
 import org.unclesniper.choreo.parseopt.OptionLogic;
 import org.unclesniper.choreo.ChoreoEntityResolver;
@@ -385,6 +389,97 @@ public class CLIOptions implements PropertyUtils.EntitySink {
 		builder.append(value.toString());
 		builder.append(',');
 		builder.append(CLIOptions.LINE_SEPARATOR);
+	}
+
+	public BuildContext toBuildContext(String[] argv) throws ChoreoException, IOException {
+		File workdir = new File(".").getAbsoluteFile();
+		// first, find the choreography file
+		File basedir, graphdir;
+		URL choreography;
+		switch(graphSourceType) {
+			case FILE:
+				{
+					boolean hasfsep = graphSource.indexOf(File.separatorChar) >= 0
+							|| graphSource.indexOf('/') >= 0;
+					if(searchUp && graphSourceType == GraphSourceType.FILE && !hasfsep) {
+						File searchDir = workdir;
+						choreography = null;
+						basedir = workdir = null;
+						do {
+							File gfile = new File(searchDir, graphSource);
+							if(gfile.isFile()) {
+								basedir = workdir = gfile.getParentFile();
+								choreography = gfile.toURI().toURL();
+								break;
+							}
+							searchDir = searchDir.getParentFile();
+						} while(searchDir != null);
+						if(choreography == null)
+							throw new NoSuchFileException("No choreography file: " + graphSource);
+					}
+					else {
+						File ab = new File(graphSource);
+						File gfile = ab.isAbsolute() ? ab : new File(workdir, graphSource);
+						basedir = workdir;
+						graphdir = gfile.getParentFile();
+						choreography = gfile.exists() ? gfile.toURI().toURL() : null;
+					}
+				}
+			case URL:
+				basedir = graphdir = workdir;
+				choreography = new URL(graphSource);
+				break;
+			case PREDEF:
+				basedir = graphdir = workdir;
+				choreography = Resources.class.getResource("predef/" + graphSource + ".xml");
+				if(choreography == null)
+					throw new IOException("No such predef: " + graphSource);
+				break;
+			default:
+				throw new Doom("Unrecognized GraphSourceType: " + graphSourceType.name());
+		}
+		// now find the other files
+		File cpropf, spropf;
+		if(commonProperties.indexOf(File.separatorChar) < 0 && commonProperties.indexOf('/') < 0
+				&& graphSourceType == GraphSourceType.FILE)
+			cpropf = new File(graphdir, commonProperties);
+		else
+			cpropf = new File(commonProperties).getAbsoluteFile();
+		if(siteProperties.indexOf(File.separatorChar) < 0 && siteProperties.indexOf('/') < 0
+				&& graphSourceType == GraphSourceType.FILE)
+			spropf = new File(graphdir, siteProperties);
+		else
+			spropf = new File(siteProperties).getAbsoluteFile();
+		// create skeleton context
+		BuildContext ctx = new BuildContext();
+		ctx.addDecodePrimitiveTypeMappers();
+		if(miscTypes)
+			ctx.addMiscTypeMappers();
+		ctx.setRefreshModules(refreshModules);
+		for(Map.Entry<String, ChoreoEntityResolver> entry : entities.entrySet())
+			ctx.addEntityResolver(entry.getKey(), entry.getValue());
+		// add initial services
+		final String svcpfx = BuildContext.class.getName();
+		ctx.putServiceObject(svcpfx + ".baseDir", basedir);
+		ctx.putServiceObject(svcpfx + ".basePath", basedir.getPath());
+		ctx.putServiceObject(svcpfx + ".argv", argv == null ? new String[0] : argv);
+		// parse service resources
+		for(Map.Entry<String, URL> entry : mappedServices.entrySet())
+			CLIOptions.loadServiceResource(ctx, entry.getKey(), entry.getValue());
+		for(URL surl : unmappedServices)
+			CLIOptions.loadServiceResource(ctx, null, surl);
+		// finish up
+		ctx.parseURL(choreography);
+		ctx.propagateError();
+		return ctx;
+	}
+
+	private static void loadServiceResource(BuildContext ctx, String key, URL url)
+			throws ChoreoException, IOException {
+		ctx.parseURL(url);
+		ctx.propagateError();
+		if(key != null)
+			ctx.putServiceObject(key, ctx.getRootObject());
 	}
 
 }
